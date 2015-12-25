@@ -1,0 +1,10 @@
+name: stockfighter
+dependencies:
+    - python=3.5
+    - pandas=0.17.1
+    - requests=2.9
+    - pip:
+        - arrow
+        - websocket-client
+        - pandas
+
