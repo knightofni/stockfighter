@@ -7,6 +7,7 @@ import websocket
 import pandas as pd
 
 from stockfighter import config
+from .websockets import WebSocketListenerQuotes
 
 API_KEY = config.get('api', 'APIKEY')
 
@@ -57,6 +58,7 @@ class MarketMaker(object):
             - MarketMaker expects that the GameMaster instance has already started a level
             - Will automatically
     """
+    ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
     def __init__(self, gm):
         # Extracts info from gamemaster
         self.gm = gm
@@ -69,29 +71,27 @@ class MarketMaker(object):
         self.headers = {
             'X-Starfighter-Authorization' : API_KEY
         }
-        self.url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
-        # Creates a websocket connection
-        self.wsurl = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
-        self.wsurl.format(account=self.account, venue=self.venue, stock=self.stock)
-        self.wsq = websocket.WebSocket().connect(self.wsurl)
+        order_url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
+        self.order_url = order_url.format(venue=self.venue, stock=self.stock)
+
+        # Start a websocket listener for quotes
+        self.wsq = WebSocketListenerQuotes(self)
+        # # Creates a websocket connection for fills
+        # self.wsurl_f = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/executions/stocks/{stock}'
+        # self.wsurl_f = self.wsurl_f.format(account=self.account, venue=self.venue, stock=self.stock)
+        print('Market Maker initiated')
 
 
     def _get_response(self, url):
         r = requests.get(url, header=self.header)
         return r.json()
 
-    def quote_ws(self):
-        """
-            Polls websocket for quote information
-        """
-        result =  json.loads(self.wsq.recv())
-        if result.get('ok'):
-            # we got proper data
-            quote = result.get('quote')
-            self.quote = quote
-            return quote
-        else:
-            print('Error when trying to get quote from websocket')
+    def _post_json(self, url, data):
+        res = requests.post(url, data=json.dumps(data), headers=self.headers)
+        return res.json()
+
+    def get_histo(self):
+        return self.wsq.get_data()
 
     def completion(self):
         """
@@ -101,20 +101,33 @@ class MarketMaker(object):
         if self.gm.live:
             print('{}/{} trading days'.format(self.gm.tradingDay, self.gm.endOfTheWorldDay))
 
-
-    def buy_limit(self, price, qty):
-        url = self.url.format(venue=self.venue, stock=self.stock)
+    def _get_basic_order_dict(price, qty):
         order = {
-            'account'  : self.account,
-            'venue'    : self.venue,
-            'stock'    : self.stock,
-            'price'    : price,
-            'qty'      : qty,
-            'direction':'buy',
-            'orderType':'limit'
+        'account'  : self.account,
+        'venue'    : self.venue,
+        'stock'    : self.stock,
+        'price'    : price,
+        'qty'      : qty,
         }
-        res = requests.post(url, data=json.dumps(order), headers=self.headers)
+
+        return order
+
+    def _send_order(self, price, qty, order_type, direction):
+        if order_type not in self.ORDER_TYPE:
+            raise Exception('order_type must be on of : [{}]'.format(', '.join(self.ORDER_TYPE)))
+
+        order = self._get_basic_order_dict(price, qty)
+        order['direction'] = direction
+        order['orderType'] = order_type
+        res = self._post_json(self.order_url, order)
         return res.json()
+
+    def buy(self, price, qty, order_type='limit'):
+        return self._send_order(price, qty, order_type, 'buy')
+
+    def sell(self, price, qty, order_type='limit'):
+        return self._send_order(price, qty, order_type, 'sell')
+
 
     def order_book(self):
         return self.sft.order_book(self.stock)
