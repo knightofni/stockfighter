@@ -8,7 +8,7 @@ import pandas as pd
 
 from stockfighter import config
 
-API_KEY = config.get('api', 'API_KEY')
+API_KEY = config.get('api', 'APIKEY')
 
 class StockFighterTrader(object):
     """
@@ -73,7 +73,7 @@ class MarketMaker(object):
         # Creates a websocket connection
         self.wsurl = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
         self.wsurl.format(account=self.account, venue=self.venue, stock=self.stock)
-        self.wsq = websocket.WebSocket().connect(url)
+        self.wsq = websocket.WebSocket().connect(self.wsurl)
 
 
     def _get_response(self, url):

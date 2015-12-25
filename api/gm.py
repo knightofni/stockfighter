@@ -3,7 +3,7 @@ import json
 
 from stockfighter import config
 
-API_KEY = config.get('api', 'API_KEY')
+API_KEY = config.get('api', 'APIKEY')
 
 class GameMaster(object):
     """
@@ -37,7 +37,7 @@ class GameMaster(object):
         return r.json()
 
     def start(self, level):
-        is level not in self.LEVELS:
+        if level not in self.LEVELS:
             raise Exception('Available levels are : {}'.fornat(self.LEVELS))
 
         url = self.URL + '/levels/{level}'.format(level=level)
