@@ -20,12 +20,27 @@ class GameMaster(object):
             'Cookie' : 'api_key={}'.format(API_KEY)
             }
 
+    def _flash_level2(self):
+        """
+            Parses the flash message for level 2 (it includes the target price)
+        """
+        flash = self.status.get('flash').get('info')
+        if flash:
+            i1 = flash.index('$')
+            i2 = flash[i1+1:].index('$')
+            self.target_price = float(flash[i1+i2+2:-1])
+        else:
+            self.target_price = None
+
+
     def _update(self):
         url = self.URL + '/instances/{instanceId}'.format(instanceId=self.instanceId)
         resp = self._get(url)
         self.live = resp.get('ok')
         self.endOfTheWorldDay = resp.get('details').get('endOfTheWorldDay')
         self.tradingDay = resp.get('details').get('tradingDay')
+        self.status = resp
+        self._flash_level2()
 
 
     def _post(self, url):

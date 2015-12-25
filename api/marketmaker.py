@@ -101,7 +101,7 @@ class MarketMaker(object):
         if self.gm.live:
             print('{}/{} trading days'.format(self.gm.tradingDay, self.gm.endOfTheWorldDay))
 
-    def _get_basic_order_dict(price, qty):
+    def _get_basic_order_dict(self, price, qty):
         order = {
         'account'  : self.account,
         'venue'    : self.venue,
@@ -119,8 +119,7 @@ class MarketMaker(object):
         order = self._get_basic_order_dict(price, qty)
         order['direction'] = direction
         order['orderType'] = order_type
-        res = self._post_json(self.order_url, order)
-        return res.json()
+        return self._post_json(self.order_url, order)
 
     def buy(self, price, qty, order_type='limit'):
         return self._send_order(price, qty, order_type, 'buy')

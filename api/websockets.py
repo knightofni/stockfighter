@@ -5,10 +5,10 @@ import threading
 import pandas as pd
 
 class WebSocketListenerQuotes(object):
-	"""
-		- Creates a websocket listener
-		- Runs it into a thread
-	"""
+    """
+        - Creates a websocket listener
+        - Runs it into a thread
+    """
     def __init__(self, mm):
         url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
         url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
