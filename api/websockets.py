@@ -12,16 +12,17 @@ class ThreadedWebSocket(object):
         - Create child class. The __init__ method of the child must send the url of the websocket
             to the parent's __init__ method
     """
-    def __init__(self, url):
-        self._create_thread(url)
+    def __init__(self, url, data):
+        self._create_thread(url, data)
 
-    def _create_thread(self, url):
+    def _create_thread(self, url, data):
         ws = websocket.WebSocketApp(url, on_message = self.on_message, on_close = self.on_close)
         ws.data = []
         wst = threading.Thread(target=ws.run_forever)
         wst.daemon = True
         wst.start()
         self.ws = ws
+        self.ws.live = True
 
     @staticmethod
     def on_message(ws, message):
@@ -29,6 +30,7 @@ class ThreadedWebSocket(object):
 
     @staticmethod
     def on_close(ws):
+        ws.live = False
         print("### closed ###")
 
 class WebSocketListenerQuotes(ThreadedWebSocket):
@@ -36,10 +38,10 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         - Creates a websocket listener
         - Runs it into a thread
     """
-    def __init__(self, mm):
+    def __init__(self, mm, data=[]):
         url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
         url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
-        ThreadedWebSocket.__init__(self, url)
+        ThreadedWebSocket.__init__(self, url, data)
 
     @staticmethod
     def _update_spread_data(histo_data, quote):
@@ -93,10 +95,10 @@ class WebSocketListenerFills(ThreadedWebSocket):
         - Creates a websocket listener
         - Runs it into a thread
     """
-    def __init__(self, mm):
+    def __init__(self, mm, data=[]):
         url = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/executions/stocks/{stock}'
         url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
-        ThreadedWebSocket.__init__(self, url)
+        ThreadedWebSocket.__init__(self, url, data)
 
 
 

@@ -113,13 +113,27 @@ class MarketMaker(object):
         res = requests.delete(url, headers=self._headers)
         return res.json()
 
+    def _check_websocket_quotes_health(self):
+        if not self._wsq.ws.live:
+            data = self._wsq.ws.data.copy()
+            self._wsq = WebSocketListenerQuotes(self, data)
+            print('WebSocketListenerQuotes restarted')
+
+    def _check_websocket_fills_health(self):
+        if not self._wsf.ws.live:
+            data = self._wsf.ws.data.copy()
+            self._wsf = WebSocketListenerFills(self, data)
+            print('WebSocketListenerFills restarted')
+
     """
         Market Data
     """
     def get_histo(self):
+        self._check_websocket_quotes_health()
         return self._wsq.get_data()
 
     def get_spread(self):
+        self._check_websocket_quotes_health()
         return self._wsq.get_spread()
 
     def order_book(self):
@@ -133,15 +147,47 @@ class MarketMaker(object):
     """
     def _get_fills_ws(self):
         # Data from the Fills websocket
+        self._check_websocket_fills_health()
         return self._wsf.ws.data
 
-    def _parse_fills(self):
-        """
-            Checks own fills from websocket data. Not sure how to use this yet
-        """
-        fills= self._get_fills_ws()
+    def _find_latest(self, orders):
+        latest_only = {}
 
-        return  fills
+        for order in orders:
+            inid = order.get('incomingId')
+            oid = order.get('order').get('id')
+
+            if oid:
+                soid = str(oid)
+                if soid in latest_only.keys():
+                    current_inid = latest_only.get(soid).get('incomingId')
+                    if inid > current_inid:
+                        latest_only[soid] = order
+                else:
+                    latest_only[soid] = order
+
+        return latest_only
+
+    def calculate_position(self):
+        orders = self._get_fills_ws()
+        latest_only = self._find_latest(orders)
+        qty, value = 0, 0
+        for oid, order in latest_only.items():
+            direction = order.get('order').get('direction')
+            dir_sign = 1 if direction == 'buy' else -1
+            for fill in order.get('order').get('fills'):
+                t_qty = fill.get('qty') * dir_sign
+                t_price = fill.get('price')
+                qty += t_qty
+                value += t_qty * t_price
+
+        if qty != 0:
+            pps = (value / qty) / 100
+            ret_val = (pps, qty, value)
+        else:
+            ret_val = (None, None, None)
+
+        return ret_val
 
     """
         Past orders related. Updates list of open orders
@@ -153,7 +199,9 @@ class MarketMaker(object):
         """
         self._parse_live_orders()
         if len(self.openorders) > 0:
-            return pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['direction', 'price', 'qty', 'totalFilled']]
+            df = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['ts','direction', 'price', 'qty', 'totalFilled']]
+            df['ts'] = pd.to_datetime(df['ts'])
+            return df
         else:
             return pd.DataFrame()
 
@@ -187,15 +235,18 @@ class MarketMaker(object):
             'account'  : self.account,
             'venue'    : self.venue,
             'stock'    : self.stock,
-            'price'    : price,
-            'qty'      : qty,
+            'price'    : int(price),
+            'qty'      : int(qty),
             'direction' : direction,
             'orderType' : order_type,
         }
 
         res = self._post_json(self._order_url, order)
-        self._store_order_result(res)
-        return res
+        if res.get('ok'):
+            self._store_order_result(res)
+            return res
+        else:
+            raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
 
     def _store_order_result(self, res):
         """
@@ -231,9 +282,15 @@ class MarketMaker(object):
 
 
     def cancel(self, oid):
+        """
+            Cancels order of id `oid`.
+            Adds the execution result to self.closedorders
+        """
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{order}"
         url = url.format(venue=self.venue, stock=self.stock, order=oid)
-        return self._delete(url)
+        res = self._delete(url)
+        self.closedorders.append(res)
+        return res
 
 
     """
