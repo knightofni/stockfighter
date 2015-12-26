@@ -57,8 +57,12 @@ class MarketMaker(object):
             - Needs an instance of GameMaster to be instanciated
             - MarketMaker expects that the GameMaster instance has already started a level
         Capabilities :
-            - send buy / sell orders
-            - show order book from API call
+            - send buy / sell orders            [buy, sell methods]
+            - cancel orders                     [cancel methods]
+            - show order book from API call     [order_book]
+            - show own open orders              [show_pending_orders]
+            - show past trades data             [get_histo]
+            - show past bid / ask data          [get_spread]
 
     """
     _ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
@@ -98,15 +102,19 @@ class MarketMaker(object):
         Standard API helpers
     """
     def _get_response(self, url):
-        r = requests.get(url, headers=self._headers)
-        return r.json()
+        res = requests.get(url, headers=self._headers)
+        return res.json()
 
     def _post_json(self, url, data):
         res = requests.post(url, data=json.dumps(data), headers=self._headers)
         return res.json()
 
+    def _delete(self, url):
+        res = requests.delete(url, headers=self._headers)
+        return res.json()
+
     """
-        Access to Quotes data
+        Market Data
     """
     def get_histo(self):
         return self._wsq.get_data()
@@ -114,6 +122,26 @@ class MarketMaker(object):
     def get_spread(self):
         return self._wsq.get_spread()
 
+    def order_book(self):
+        return self._sft.order_book(self.stock)
+
+    def quote(self):  ## Still usefull ??
+        return self._sft.get_quote(self.stock)
+
+    """
+        Fills related
+    """
+    def _get_fills_ws(self):
+        # Data from the Fills websocket
+        return self._wsf.ws.data
+
+    def _parse_fills(self):
+        """
+            Checks own fills from websocket data. Not sure how to use this yet
+        """
+        fills= self._get_fills_ws()
+
+        return  fills
 
     """
         Past orders related. Updates list of open orders
@@ -130,32 +158,22 @@ class MarketMaker(object):
             return pd.DataFrame()
 
 
-    def _get_fills_ws(self):
-        # Data from the Fills websocket
-        return self._wsf.ws.data
-
     def _parse_live_orders(self):
         """
-            Check the status of all open orders.
-            Those who are now closed go to closedorders
-            If they are still live they go to  new_open_orders
-            After checking all open orders, new_open_orders replaces self.openorders
+            Checks all passed orders for stock.
+            Splits the list between closed and pending orders
         """
-        self.openorders = []
-        # Refreshed Data
-        orders = self._get_fills_ws()
-
-        # got data
+        orders = self.get_all_orders_in_stock()
+        self.openorders, self.closedorders = [], []
         for order in orders:
-            live = order.get('open')
-            if live:
+            if order.get('open'):
                 self.openorders.append(order)
             else:
                 self.closedorders.append(order)
-
     """
         Sends buy / sell orders
             - Will parse and store the execution result
+            - can also cancel orders
     """
 
     def _post_send_order(self, price, qty, order_type, direction):
@@ -212,11 +230,10 @@ class MarketMaker(object):
         return self._post_send_order(price, qty, order_type, 'sell')
 
 
-    def order_book(self):
-        return self._sft.order_book(self.stock)
-
-    def quote(self):
-        return self._sft.get_quote(self.stock)
+    def cancel(self, oid):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{order}"
+        url = url.format(venue=self.venue, stock=self.stock, order=oid)
+        return self._delete(url)
 
 
     """
@@ -235,7 +252,7 @@ class MarketMaker(object):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self.venue, stock=self.stock, account=self.account)
         res = self._get_response(url)
         if res.get('ok'):
-            return res
+            return res.get('orders')
         else:
             raise Exception('Didnt get proper data from get_all_orders_in_stock')
 
@@ -243,7 +260,7 @@ class MarketMaker(object):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self.venue, account=self.account)
         res = self._get_response(url)
         if res.get('ok'):
-            return res
+            return res.get('orders')
         else:
             raise Exception('Didnt get proper data from get_all_orders')
 
