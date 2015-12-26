@@ -1,9 +1,15 @@
-import requests
 import json
+import shelve
+import os
+from contextlib import closing
+
+import requests
 
 from stockfighter import config
+from stockfighter import BASE_PATH
 
 API_KEY = config.get('api', 'APIKEY')
+
 
 class GameMaster(object):
     """
@@ -22,11 +28,17 @@ class GameMaster(object):
     _LEVELS = ['first_steps', 'chock_a_block']
 
     def __init__(self):
-
+        self._shelve_path = os.path.join(BASE_PATH, 'lib/gm.db')
         self.headers = {
             'Cookie' : 'api_key={}'.format(API_KEY)
             }
-        self._instanceId = None
+        self._instanceId = self._load_instance_id()
+
+        if self._instanceId:
+            # try to resume
+            self.resume()
+
+
 
     """
         API helpers
@@ -38,6 +50,19 @@ class GameMaster(object):
     def _get(self, url):
         r = requests.get(url, headers=self.headers)
         return r.json()
+
+    """
+        Saving and Loading the instanceId to disk for easier resume
+    """
+    def _save_instance_id(self, instanceId):
+        with closing(shelve.open(self._shelve_path)) as db:
+            db['instanceId'] = instanceId
+
+    def _load_instance_id(self):
+        with closing(shelve.open(self._shelve_path)) as db:
+            instanceId = db.get('instanceId')
+
+        return instanceId
 
     """
         Updating the GameMaster to know advancement / get extra data
@@ -56,7 +81,7 @@ class GameMaster(object):
         """
             Parses the flash message for level 2 (it includes the target price)
         """
-        flash = self.status.get('flash', {}).get('info')
+        flash = self._status.get('flash', {}).get('info')
         if flash:
             i1 = flash.index('$')
             i2 = flash[i1+1:].index('$')
@@ -66,7 +91,7 @@ class GameMaster(object):
 
 
     def _update(self):
-        url = self.URL + '/instances/{instanceId}'.format(instanceId=self._instanceId)
+        url = self._URL + '/instances/{instanceId}'.format(instanceId=self._instanceId)
         resp = self._get(url)
         self._live = resp.get('ok')
         self._endOfTheWorldDay = resp.get('details').get('endOfTheWorldDay')
@@ -78,17 +103,21 @@ class GameMaster(object):
     """
         Controls the GameMaster
     """
+    def _parse_starting_info(self, resp):
+        self.account = resp.get('account')
+        self._instanceId = resp.get('instanceId')
+        self.tickers = resp.get('tickers')
+        self.venues = resp.get('venues')
+        self._start_resp = resp
+
     def start(self, level):
         if level not in self._LEVELS:
             raise Exception('Available levels are : {}'.fornat(self._LEVELS))
 
         url = self._URL + '/levels/{level}'.format(level=level)
         resp = self._post(url)
-        self.account = resp.get('account')
-        self._instanceId = resp.get('instanceId')
-        self.tickers = resp.get('tickers')
-        self.venues = resp.get('venues')
-        self._start_resp = resp
+        self._parse_starting_info(resp)
+        self._save_instance_id(self._instanceId)
         print('GameMaster : level {} initiated'.format(level))
 
     def stop(self):
@@ -103,6 +132,16 @@ class GameMaster(object):
         if self._instanceId is not None:
             url = self._URL + '/instances/{instanceId}/restart'.format(instanceId=self._instanceId)
             resp = self._post(url)
+            self._parse_starting_info(resp)
             print('Restarted')
+        else:
+            raise Exception('Cant stop because there is no recorded instanceId')
+
+    def resume(self):
+        if self._instanceId is not None:
+            url = self._URL + '/instances/{instanceId}/resume'.format(instanceId=self._instanceId)
+            resp = self._post(url)
+            self._parse_starting_info(resp)
+            print('Resumed')
         else:
             raise Exception('Cant stop because there is no recorded instanceId')
