@@ -19,12 +19,13 @@ class GameMaster(object):
         self.headers = {
             'Cookie' : 'api_key={}'.format(API_KEY)
             }
+        self.instanceId = None
 
     def _flash_level2(self):
         """
             Parses the flash message for level 2 (it includes the target price)
         """
-        flash = self.status.get('flash').get('info')
+        flash = self.status.get('flash', {}).get('info')
         if flash:
             i1 = flash.index('$')
             i2 = flash[i1+1:].index('$')
@@ -64,7 +65,18 @@ class GameMaster(object):
         self.start_resp = resp
         print('GameMaster : level {} initiated'.format(level))
 
+    def stop(self):
+        if self.instanceId is not None:
+            url = self.URL + '/instances/{instanceId}/stop'.format(instanceId=self.instanceId)
+            resp = self._post(url)
+            print('Stopped')
+        else:
+            raise Exception('Cant stop because there is no recorded instanceId')
+
     def restart(self):
-        url = self.URL + '/instances/{instanceId}/restart'.format(instanceId=self.instanceId)
-        resp = self._post(url)
-        print('Restarted')
+        if self.instanceId is not None:
+            url = self.URL + '/instances/{instanceId}/restart'.format(instanceId=self.instanceId)
+            resp = self._post(url)
+            print('Restarted')
+        else:
+            raise Exception('Cant stop because there is no recorded instanceId')
