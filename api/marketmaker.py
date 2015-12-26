@@ -1,9 +1,8 @@
 import json
-import random
 import time
 
+import arrow
 import requests
-import websocket
 import pandas as pd
 
 from stockfighter import config
@@ -51,7 +50,7 @@ class StockFighterTrader(object):
 
 
 
-class MarketMaker(object):
+class MarketBroker(object):
     """
         Main API.
             - Needs an instance of GameMaster to be instanciated
@@ -81,6 +80,8 @@ class MarketMaker(object):
         # list for orders
         self.openorders        =    []
         self.closedorders      =    []
+
+        self.cash = 0
 
         # Instanciate a StockFighterTrade. Checks health of sf
         self._sft = StockFighterTrader(self.venue)
@@ -142,53 +143,23 @@ class MarketMaker(object):
     def quote(self):  ## Still usefull ??
         return self._sft.get_quote(self.stock)
 
-    """
-        Fills related
-    """
     def _get_fills_ws(self):
         # Data from the Fills websocket
         self._check_websocket_fills_health()
         return self._wsf.ws.data
 
-    def _find_latest(self, orders):
-        latest_only = {}
+    def get_latest_quote_time(self):
+        # arrow time of the latest quote
+        self._check_websocket_quotes_health()
+        return self._wsq.get_latest_quote_time()
 
-        for order in orders:
-            inid = order.get('incomingId')
-            oid = order.get('order').get('id')
-
-            if oid:
-                soid = str(oid)
-                if soid in latest_only.keys():
-                    current_inid = latest_only.get(soid).get('incomingId')
-                    if inid > current_inid:
-                        latest_only[soid] = order
-                else:
-                    latest_only[soid] = order
-
-        return latest_only
-
-    def calculate_position(self):
-        orders = self._get_fills_ws()
-        latest_only = self._find_latest(orders)
-        qty, value = 0, 0
-        for oid, order in latest_only.items():
-            direction = order.get('order').get('direction')
-            dir_sign = 1 if direction == 'buy' else -1
-            for fill in order.get('order').get('fills'):
-                t_qty = fill.get('qty') * dir_sign
-                t_price = fill.get('price')
-                qty += t_qty
-                value += t_qty * t_price
-
-        if qty != 0:
-            pps = (value / qty) / 100
-            ret_val = (pps, qty, value)
+    def current_quote(self):
+        # Get data on the latest quote
+        df = self.get_spread()
+        if not df.empty:
+            return df.loc[df.index.max()]
         else:
-            ret_val = (None, None, None)
-
-        return ret_val
-
+            return pd.Series()
     """
         Past orders related. Updates list of open orders
     """
@@ -199,7 +170,7 @@ class MarketMaker(object):
         """
         self._parse_live_orders()
         if len(self.openorders) > 0:
-            df = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['ts','direction', 'price', 'qty', 'totalFilled']]
+            df = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
             df['ts'] = pd.to_datetime(df['ts'])
             return df
         else:
@@ -224,12 +195,13 @@ class MarketMaker(object):
             - can also cancel orders
     """
 
-    def _post_send_order(self, price, qty, order_type, direction):
+    def _post_send_order(self, qty, price, order_type, direction):
         if order_type not in self._ORDER_TYPE:
             raise Exception('order_type must be on of : [{}]'.format(', '.join(self._ORDER_TYPE)))
 
         if order_type != 'market' and not price:
             raise Exception('need a price for order_type {}'.format(order_type))
+
 
         order = {
             'account'  : self.account,
@@ -241,24 +213,21 @@ class MarketMaker(object):
             'orderType' : order_type,
         }
 
-        res = self._post_json(self._order_url, order)
-        if res.get('ok'):
-            self._store_order_result(res)
-            return res
+        if qty > 0:
+            res = self._post_json(self._order_url, order)
         else:
-            raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
+            print('Qty passed {} - not sending {} order'.format(qty, direction))
+            res = dict()
 
-    def _store_order_result(self, res):
-        """
-            Stores the response from an order
-                If live, goes to self.openorders
-                If Closed, goes to self.closedorders
-        """
-        live = res.get('open')
-        if live:
-            self.openorders.append(res)
+
+        if res.get('ok'):
+            #self._store_order_result(res)
+            return res
+        elif res.get('error'):
+            raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
         else:
-            self.closedorders.append(res)
+            return None
+
 
     def buy(self, qty, price=None, order_type='limit'):
         """
@@ -268,7 +237,7 @@ class MarketMaker(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        return self._post_send_order(price, qty, order_type, 'buy')
+        return self._post_send_order(qty, price, order_type, 'buy')
 
     def sell(self, qty, price=None, order_type='limit'):
         """
@@ -278,7 +247,7 @@ class MarketMaker(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        return self._post_send_order(price, qty, order_type, 'sell')
+        return self._post_send_order(qty, price, order_type, 'sell')
 
 
     def cancel(self, oid):

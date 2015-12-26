@@ -43,6 +43,13 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
         ThreadedWebSocket.__init__(self, url, data)
 
+
+    def get_latest_quote_time(self):
+        if len(self.ws.data) > 0:
+            return arrow.get(self.ws.data[-1].get('quote').get('quoteTime'))
+        else:
+            return arrow.utcnow()
+
     @staticmethod
     def _update_spread_data(histo_data, quote):
         histo_data['quoteTime'].append(arrow.get(quote.get('quoteTime')).datetime)

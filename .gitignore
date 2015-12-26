@@ -1,4 +1,6 @@
 lib/config.ini
+lib/*.db
 log/*.log
 *.pyc
 __pycache__
+

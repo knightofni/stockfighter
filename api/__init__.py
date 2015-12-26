@@ -1,3 +1,3 @@
 from .gm import GameMaster
-from .marketmaker import MarketMaker
+from .marketmaker import MarketBroker
 from .websockets import WebSocketListenerQuotes

@@ -25,7 +25,7 @@ class GameMaster(object):
 
     """
     _URL = 'https://www.stockfighter.io/gm'
-    _LEVELS = ['first_steps', 'chock_a_block']
+    _LEVELS = ['first_steps', 'chock_a_block', 'sell_side']
 
     def __init__(self):
         self._shelve_path = os.path.join(BASE_PATH, 'lib/gm.db')
@@ -37,6 +37,9 @@ class GameMaster(object):
         if self._instanceId:
             # try to resume
             self.resume()
+
+        ## setting up level info
+        self.target_price_l2 = None
 
 
 
@@ -104,11 +107,19 @@ class GameMaster(object):
         Controls the GameMaster
     """
     def _parse_starting_info(self, resp):
-        self.account = resp.get('account')
-        self._instanceId = resp.get('instanceId')
-        self.tickers = resp.get('tickers')
-        self.venues = resp.get('venues')
-        self._start_resp = resp
+        if resp.get('ok'):
+            self.account = resp.get('account')
+            self._instanceId = resp.get('instanceId')
+            self.tickers = resp.get('tickers')
+            self.venues = resp.get('venues')
+            self._start_resp = resp
+            self.target_price_l2 = None
+            ret_val = True
+        else:
+            print('Error : {}'.format(resp.get('error')))
+            ret_val = False
+
+        return ret_val
 
     def start(self, level):
         if level not in self._LEVELS:
@@ -116,9 +127,9 @@ class GameMaster(object):
 
         url = self._URL + '/levels/{level}'.format(level=level)
         resp = self._post(url)
-        self._parse_starting_info(resp)
-        self._save_instance_id(self._instanceId)
-        print('GameMaster : level {} initiated'.format(level))
+        if self._parse_starting_info(resp):
+            self._save_instance_id(self._instanceId)
+            print('GameMaster : level {} initiated'.format(level))
 
     def stop(self):
         if self._instanceId is not None:
@@ -132,16 +143,16 @@ class GameMaster(object):
         if self._instanceId is not None:
             url = self._URL + '/instances/{instanceId}/restart'.format(instanceId=self._instanceId)
             resp = self._post(url)
-            self._parse_starting_info(resp)
-            print('Restarted')
+            if self._parse_starting_info(resp):
+                print('Restarted')
         else:
-            raise Exception('Cant stop because there is no recorded instanceId')
+            raise Exception('Cant restart because there is no recorded instanceId')
 
     def resume(self):
         if self._instanceId is not None:
             url = self._URL + '/instances/{instanceId}/resume'.format(instanceId=self._instanceId)
             resp = self._post(url)
-            self._parse_starting_info(resp)
-            print('Resumed')
+            if self._parse_starting_info(resp):
+                print('Resumed')
         else:
-            raise Exception('Cant stop because there is no recorded instanceId')
+            raise Exception('Cant resume because there is no recorded instanceId')
