@@ -7,7 +7,7 @@ import websocket
 import pandas as pd
 
 from stockfighter import config
-from .websockets import WebSocketListenerQuotes
+from .websockets import WebSocketListenerQuotes, WebSocketListenerFills
 
 API_KEY = config.get('api', 'APIKEY')
 
@@ -56,87 +56,195 @@ class MarketMaker(object):
         Main API.
             - Needs an instance of GameMaster to be instanciated
             - MarketMaker expects that the GameMaster instance has already started a level
-            - Will automatically
+        Capabilities :
+            - send buy / sell orders
+            - show order book from API call
+
     """
-    ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
-    def __init__(self, gm):
+    _ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
+
+    def __init__(self, gm=None):
         # Extracts info from gamemaster
-        self.gm = gm
-        self.venue = gm.venues[0]
-        self.stock = gm.tickers[0]
-        self.account = gm.account
+        if gm:
+            self.gm = gm
+            self.venue = gm.venues[0]
+            self.stock = gm.tickers[0]
+            self.account = gm.account
+        else:
+            self.venue = 'TESTEX'
+            self.stock = 'FOOBAR'
+            self.account = 'EXB123456'
+        # list for orders
+        self.openorders        =    []
+        self.closedorders      =    []
+
         # Instanciate a StockFighterTrade. Checks health of sf
-        self.sft = StockFighterTrader(self.venue)
+        self._sft = StockFighterTrader(self.venue)
         # Genetic API data
-        self.headers = {
+        self._headers = {
             'X-Starfighter-Authorization' : API_KEY
         }
         order_url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
-        self.order_url = order_url.format(venue=self.venue, stock=self.stock)
+        self._order_url = order_url.format(venue=self.venue, stock=self.stock)
 
         # Start a websocket listener for quotes
-        self.wsq = WebSocketListenerQuotes(self)
+        self._wsq = WebSocketListenerQuotes(self)
         # # Creates a websocket connection for fills
-        # self.wsurl_f = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/executions/stocks/{stock}'
-        # self.wsurl_f = self.wsurl_f.format(account=self.account, venue=self.venue, stock=self.stock)
-        print('Market Maker initiated')
+        self._wsf = WebSocketListenerFills(self)
+        print('Market Maker for stock {} initiated'.format(self.stock))
 
 
+    """
+        Standard API helpers
+    """
     def _get_response(self, url):
-        r = requests.get(url, header=self.header)
+        r = requests.get(url, headers=self._headers)
         return r.json()
 
     def _post_json(self, url, data):
-        res = requests.post(url, data=json.dumps(data), headers=self.headers)
+        res = requests.post(url, data=json.dumps(data), headers=self._headers)
         return res.json()
 
+    """
+        Access to Quotes data
+    """
     def get_histo(self):
-        return self.wsq.get_data()
+        return self._wsq.get_data()
 
-    def completion(self):
-        """
-            Updates GameMaster so that we know what is the current trading day
-        """
-        self.gm._update()
-        if self.gm.live:
-            print('{}/{} trading days'.format(self.gm.tradingDay, self.gm.endOfTheWorldDay))
+    def get_spread(self):
+        return self._wsq.get_spread()
 
-    def _get_basic_order_dict(self, price, qty):
+
+    """
+        Past orders related. Updates list of open orders
+    """
+
+    def show_pending_orders(self):
+        """
+            returns a sorted dataframe of pending orders
+        """
+        self._parse_live_orders()
+        if len(self.openorders) > 0:
+            return pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['direction', 'price', 'qty', 'totalFilled']]
+        else:
+            return pd.DataFrame()
+
+
+    def _get_fills_ws(self):
+        # Data from the Fills websocket
+        return self._wsf.ws.data
+
+    def _parse_live_orders(self):
+        """
+            Check the status of all open orders.
+            Those who are now closed go to closedorders
+            If they are still live they go to  new_open_orders
+            After checking all open orders, new_open_orders replaces self.openorders
+        """
+        self.openorders = []
+        # Refreshed Data
+        orders = self._get_fills_ws()
+
+        # got data
+        for order in orders:
+            live = order.get('open')
+            if live:
+                self.openorders.append(order)
+            else:
+                self.closedorders.append(order)
+
+    """
+        Sends buy / sell orders
+            - Will parse and store the execution result
+    """
+
+    def _post_send_order(self, price, qty, order_type, direction):
+        if order_type not in self._ORDER_TYPE:
+            raise Exception('order_type must be on of : [{}]'.format(', '.join(self._ORDER_TYPE)))
+
+        if order_type != 'market' and not price:
+            raise Exception('need a price for order_type {}'.format(order_type))
+
         order = {
-        'account'  : self.account,
-        'venue'    : self.venue,
-        'stock'    : self.stock,
-        'price'    : price,
-        'qty'      : qty,
+            'account'  : self.account,
+            'venue'    : self.venue,
+            'stock'    : self.stock,
+            'price'    : price,
+            'qty'      : qty,
+            'direction' : direction,
+            'orderType' : order_type,
         }
 
-        return order
+        res = self._post_json(self._order_url, order)
+        self._store_order_result(res)
+        return res
 
-    def _send_order(self, price, qty, order_type, direction):
-        if order_type not in self.ORDER_TYPE:
-            raise Exception('order_type must be on of : [{}]'.format(', '.join(self.ORDER_TYPE)))
+    def _store_order_result(self, res):
+        """
+            Stores the response from an order
+                If live, goes to self.openorders
+                If Closed, goes to self.closedorders
+        """
+        live = res.get('open')
+        if live:
+            self.openorders.append(res)
+        else:
+            self.closedorders.append(res)
 
-        order = self._get_basic_order_dict(price, qty)
-        order['direction'] = direction
-        order['orderType'] = order_type
-        return self._post_json(self.order_url, order)
+    def buy(self, qty, price=None, order_type='limit'):
+        """
+            Buy this MarketMaker's stock
+            input :
+                qty     : int, how many shares you want to buy
+                price   : int, price x 100
+                order_type : string, limit, market, fill-or-kill, immediate-or-cancel
+        """
+        return self._post_send_order(price, qty, order_type, 'buy')
 
-    def buy(self, price, qty, order_type='limit'):
-        return self._send_order(price, qty, order_type, 'buy')
-
-    def sell(self, price, qty, order_type='limit'):
-        return self._send_order(price, qty, order_type, 'sell')
+    def sell(self, qty, price=None, order_type='limit'):
+        """
+            Buy this MarketMaker's stock
+            input :
+                qty     : int, how many shares you want to buy
+                price   : int, price x 100
+                order_type : string, limit, market, fill-or-kill, immediate-or-cancel
+        """
+        return self._post_send_order(price, qty, order_type, 'sell')
 
 
     def order_book(self):
-        return self.sft.order_book(self.stock)
+        return self._sft.order_book(self.stock)
 
     def quote(self):
-        return self.sft.get_quote(self.stock)
+        return self._sft.get_quote(self.stock)
 
-    def order_status(self, oid):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/:{oid}".format(venue=self.venue, stock=self.stock, oid=oid)
+
+    """
+        API calls to get order status. Currently not used as the websocket seems to be providing
+            similar results faster.
+    """
+    def get_order_status(self, oid):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}".format(venue=self.venue, stock=self.stock, oid=oid)
         res = self._get_response(url)
-        return res.json()
+        if res.get('ok'):
+            return res
+        else:
+            raise Exception('Didnt get proper data from get_order_status')
+
+    def get_all_orders_in_stock(self):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self.venue, stock=self.stock, account=self.account)
+        res = self._get_response(url)
+        if res.get('ok'):
+            return res
+        else:
+            raise Exception('Didnt get proper data from get_all_orders_in_stock')
+
+    def get_all_orders(self):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self.venue, account=self.account)
+        res = self._get_response(url)
+        if res.get('ok'):
+            return res
+        else:
+            raise Exception('Didnt get proper data from get_all_orders')
 
 
