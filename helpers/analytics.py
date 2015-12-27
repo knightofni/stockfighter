@@ -11,6 +11,10 @@ def get_avg_price(mm):
 
 def get_vwap(mm):
     df = mm.get_histo()
-    df['prod'] = df['last'] * df['lastSize']
-    return  df['prod'].cumsum() / df['lastSize'].cumsum()
+    if not df.empty:
+        df['prod'] = df['last'] * df['lastSize']
+        df = df.resample('10S', how='sum')
+        return  df['prod'].cumsum() / df['lastSize'].cumsum()
+    else:
+        return None
 
