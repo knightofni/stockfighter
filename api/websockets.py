@@ -35,8 +35,11 @@ class ThreadedWebSocket(object):
 
 class WebSocketListenerQuotes(ThreadedWebSocket):
     """
-        - Creates a websocket listener
-        - Runs it into a thread
+        Public methods :
+            - get_latest_quote_time : datetime of the latest quote
+            - get_spread            : dataframe (timeserie) of the bid / ask.
+                                    removes dates where we have only bids or asks
+            - get_data              : dataframe (timeserie) of trades.
     """
     def __init__(self, mm, data=[]):
         url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'

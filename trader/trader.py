@@ -93,6 +93,12 @@ class TraderBook(object):
         Fills related
     """
     def _find_latest(self, orders):
+        """
+            From a dictionnary of fills (returned by the fills websocket)
+                filters, and return only the latest information
+                (the fills dictionnary will contain one entry for each partial fill
+                of an orderid )
+        """
         latest_only = {}
 
         for order in orders:
@@ -111,12 +117,26 @@ class TraderBook(object):
         return latest_only
 
     def calculate_position(self):
+        """
+            Uses our stored orders to compute our position.
+            Returns a tuple
+                pps     - price paid per shares. Net cost of our purchases / sales, divided by
+                        the total qty of shares we are long / short at the moment
+                qty     - qty of shares we own (negative if we are short)
+                nav     - our current PnL : cash + market_value
+                            x cash          = aggregate cost of our purchases / sales
+                            x market_value  = current market value of our position.
+                                Using the price of the latet trade
+        """
         orders = self.mb._get_fills_ws()
         latest_only = self._find_latest(orders)
         qty, value = 0, 0
+
+        # Iterating the fills
         for oid, order in latest_only.items():
             direction = order.get('order').get('direction')
             dir_sign = 1 if direction == 'buy' else -1
+            # aggregating all the partial fills of that order
             for fill in order.get('order').get('fills'):
                 t_qty = fill.get('qty') * dir_sign
                 t_price = fill.get('price')

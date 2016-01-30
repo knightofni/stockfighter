@@ -40,7 +40,6 @@ print(open_buy)
 print(open_sell)
 50
 
-
 ```
 
 

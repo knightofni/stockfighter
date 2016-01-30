@@ -55,6 +55,7 @@ class MarketBroker(object):
         Main API.
             - Needs an instance of GameMaster to be instanciated
             - MarketMaker expects that the GameMaster instance has already started a level
+
         Capabilities :
             - send buy / sell orders            [buy, sell methods]
             - cancel orders                     [cancel methods]
@@ -170,7 +171,8 @@ class MarketBroker(object):
         """
         self._parse_live_orders()
         if len(self.openorders) > 0:
-            df = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
+            raw = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)
+            df = raw[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
             df['ts'] = pd.to_datetime(df['ts'])
             return df
         else:

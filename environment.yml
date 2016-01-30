@@ -3,6 +3,7 @@ dependencies:
     - python=3.5
     - pandas=0.17.1
     - requests=2.9
+    - jupyter
     - pip:
         - arrow
         - websocket-client
