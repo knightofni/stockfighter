@@ -42,6 +42,9 @@ class TraderBook(object):
             self.orders[oid] = res
 
     def _update_orders(self):
+        """
+            Update status of orders
+        """
         orders = self.mb._get_fills_ws()
         latest_only = self._find_latest(orders)
 
@@ -73,7 +76,7 @@ class TraderBook(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        res = self.mb.buy(qty, price, order_type)
+        res = self.mb._buy(qty, price, order_type)
         self._store_order_result(res)
         return res
 
@@ -85,8 +88,17 @@ class TraderBook(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        res = self.mb.sell(qty, price, order_type)
+        res = self.mb._sell(qty, price, order_type)
         self._store_order_result(res)
+        return res
+
+    def cancel(self, oid):
+        """
+            cancel an order
+
+                oid :
+        """
+        res = self.mb._cancel(oid)
         return res
 
     """

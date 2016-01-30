@@ -43,7 +43,7 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
     """
     def __init__(self, mm, data=[]):
         url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
-        url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
+        url = url.format(account=mm._account, venue=mm._venue, stock=mm._stock)
         ThreadedWebSocket.__init__(self, url, data)
 
 
@@ -107,7 +107,7 @@ class WebSocketListenerFills(ThreadedWebSocket):
     """
     def __init__(self, mm, data=[]):
         url = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/executions/stocks/{stock}'
-        url = url.format(account=mm.account, venue=mm.venue, stock=mm.stock)
+        url = url.format(account=mm._account, venue=mm._venue, stock=mm._stock)
         ThreadedWebSocket.__init__(self, url, data)
 
 

@@ -1,54 +1,16 @@
 import json
 import time
+import threading
 
 import arrow
 import requests
 import pandas as pd
 
 from stockfighter import config
+from .venue import StockFighterTrader
 from .websockets import WebSocketListenerQuotes, WebSocketListenerFills
 
 API_KEY = config.get('api', 'APIKEY')
-
-class StockFighterTrader(object):
-    """
-        - Checks health of API on construction
-        - Used for API calls that do not need authentication
-    """
-    def __init__(self, venue):
-        self.venue = venue
-        if not self._isonline():
-            raise Exception('Stockfighter not online')
-        if not self._venue_online(venue):
-            raise Exception('Venue {} not online'.format(venue))
-
-        print('StockFighterTrader initiated')
-
-    def _get_response(self, url):
-        r = requests.get(url)
-        return r.json()
-
-    def _isonline(self):
-        url = 'https://api.stockfighter.io/ob/api/heartbeat'
-        res = self._get_response(url)
-        return res['ok']
-
-    def _venue_online(self, venue):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/heartbeat".format(**{'venue' : venue})
-        res = self._get_response(url)
-        return res['ok']
-
-    def get_quote(self, ticker):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/quote".format(venue=self.venue, stock=ticker)
-        res = self._get_response(url)
-        return res
-
-    def order_book(self, ticker):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}".format(venue=self.venue, stock=ticker)
-        res = self._get_response(url)
-        return res
-
-
 
 class MarketBroker(object):
     """
@@ -67,37 +29,40 @@ class MarketBroker(object):
     """
     _ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
 
-    def __init__(self, gm=None):
+    def __init__(self, gm=None, update=3):
         # Extracts info from gamemaster
-        if gm:
-            self.gm = gm
-            self.venue = gm.venues[0]
-            self.stock = gm.tickers[0]
-            self.account = gm.account
+        if gm and gm.ready:
+            self._gm = gm
+            self._venue = gm.venues[0]
+            self._stock = gm.tickers[0]
+            self._account = gm.account
+        elif gm and not gm.ready:
+            raise Exception('GameMaster Not Ready')
         else:
-            self.venue = 'TESTEX'
-            self.stock = 'FOOBAR'
-            self.account = 'EXB123456'
-        # list for orders
-        self.openorders        =    []
-        self.closedorders      =    []
-
-        self.cash = 0
-
+            self._venue = 'TESTEX'
+            self._stock = 'FOOBAR'
+            self._account = 'EXB123456'
         # Instanciate a StockFighterTrade. Checks health of sf
-        self._sft = StockFighterTrader(self.venue)
+        self._sft = StockFighterTrader(self._venue, self._stock)
         # Genetic API data
         self._headers = {
             'X-Starfighter-Authorization' : API_KEY
         }
         order_url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
-        self._order_url = order_url.format(venue=self.venue, stock=self.stock)
+        self._order_url = order_url.format(venue=self._venue, stock=self._stock)
 
         # Start a websocket listener for quotes
         self._wsq = WebSocketListenerQuotes(self)
         # # Creates a websocket connection for fills
         self._wsf = WebSocketListenerFills(self)
-        print('Market Maker for stock {} initiated'.format(self.stock))
+
+        # Starts polling loop
+        self.all_orders_in_stock = dict()
+        self._update = update
+        thrd = threading.Thread(target=self._loop)
+        thrd.start()
+
+        print('Market Maker for stock {} initiated'.format(self._stock))
 
 
     """
@@ -138,11 +103,12 @@ class MarketBroker(object):
         self._check_websocket_quotes_health()
         return self._wsq.get_spread()
 
+    @property
     def order_book(self):
-        return self._sft.order_book(self.stock)
+        return self._sft.order_book
 
-    def quote(self):  ## Still usefull ??
-        return self._sft.get_quote(self.stock)
+    # def quote(self):  ## Still usefull ??
+    #     return self._sft.get_quote(self._stock)
 
     def _get_fills_ws(self):
         # Data from the Fills websocket
@@ -165,32 +131,32 @@ class MarketBroker(object):
         Past orders related. Updates list of open orders
     """
 
-    def show_pending_orders(self):
-        """
-            returns a sorted dataframe of pending orders
-        """
-        self._parse_live_orders()
-        if len(self.openorders) > 0:
-            raw = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)
-            df = raw[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
-            df['ts'] = pd.to_datetime(df['ts'])
-            return df
-        else:
-            return pd.DataFrame()
+    # def show_pending_orders(self):
+    #     """
+    #         returns a sorted dataframe of pending orders
+    #     """
+    #     self._parse_live_orders()
+    #     if len(self.openorders) > 0:
+    #         raw = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)
+    #         df = raw[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
+    #         df['ts'] = pd.to_datetime(df['ts'])
+    #         return df
+    #     else:
+    #         return pd.DataFrame()
 
 
-    def _parse_live_orders(self):
-        """
-            Checks all passed orders for stock.
-            Splits the list between closed and pending orders
-        """
-        orders = self.get_all_orders_in_stock()
-        self.openorders, self.closedorders = [], []
-        for order in orders:
-            if order.get('open'):
-                self.openorders.append(order)
-            else:
-                self.closedorders.append(order)
+    # def _parse_live_orders(self):
+    #     """
+    #         Checks all passed orders for stock.
+    #         Splits the list between closed and pending orders
+    #     """
+    #     orders = self.get_all_orders_in_stock()
+    #     self.openorders, self.closedorders = [], []
+    #     for order in orders:
+    #         if order.get('open'):
+    #             self.openorders.append(order)
+    #         else:
+    #             self.closedorders.append(order)
     """
         Sends buy / sell orders
             - Will parse and store the execution result
@@ -206,9 +172,9 @@ class MarketBroker(object):
 
 
         order = {
-            'account'  : self.account,
-            'venue'    : self.venue,
-            'stock'    : self.stock,
+            'account'  : self_account,
+            'venue'    : self._venue,
+            'stock'    : self._stock,
             'price'    : int(price),
             'qty'      : int(qty),
             'direction' : direction,
@@ -223,7 +189,6 @@ class MarketBroker(object):
 
 
         if res.get('ok'):
-            #self._store_order_result(res)
             return res
         elif res.get('error'):
             raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
@@ -231,7 +196,7 @@ class MarketBroker(object):
             return None
 
 
-    def buy(self, qty, price=None, order_type='limit'):
+    def _buy(self, qty, price=None, order_type='limit'):
         """
             Buy this MarketMaker's stock
             input :
@@ -241,7 +206,7 @@ class MarketBroker(object):
         """
         return self._post_send_order(qty, price, order_type, 'buy')
 
-    def sell(self, qty, price=None, order_type='limit'):
+    def _sell(self, qty, price=None, order_type='limit'):
         """
             Buy this MarketMaker's stock
             input :
@@ -252,13 +217,13 @@ class MarketBroker(object):
         return self._post_send_order(qty, price, order_type, 'sell')
 
 
-    def cancel(self, oid):
+    def _cancel(self, oid):
         """
             Cancels order of id `oid`.
             Adds the execution result to self.closedorders
         """
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{order}"
-        url = url.format(venue=self.venue, stock=self.stock, order=oid)
+        url = url.format(venue=self._venue, stock=self._stock, order=oid)
         res = self._delete(url)
         self.closedorders.append(res)
         return res
@@ -268,24 +233,29 @@ class MarketBroker(object):
         API calls to get order status. Currently not used as the websocket seems to be providing
             similar results faster.
     """
+    def _loop(self):
+        while True:
+            self.all_orders_in_stock = self._get_all_orders_in_stock()
+            time.sleep(self._update)
+
     def get_order_status(self, oid):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}".format(venue=self.venue, stock=self.stock, oid=oid)
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}".format(venue=self._venue, stock=self._stock, oid=oid)
         res = self._get_response(url)
         if res.get('ok'):
             return res
         else:
             raise Exception('Didnt get proper data from get_order_status')
 
-    def get_all_orders_in_stock(self):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self.venue, stock=self.stock, account=self.account)
+    def _get_all_orders_in_stock(self):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self._venue, stock=self._stock, account=self._account)
         res = self._get_response(url)
         if res.get('ok'):
             return res.get('orders')
         else:
             raise Exception('Didnt get proper data from get_all_orders_in_stock')
 
-    def get_all_orders(self):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self.venue, account=self.account)
+    def _get_all_orders(self):
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self._venue, account=self._account)
         res = self._get_response(url)
         if res.get('ok'):
             return res.get('orders')

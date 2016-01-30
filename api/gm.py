@@ -28,6 +28,7 @@ class GameMaster(object):
     _LEVELS = ['first_steps', 'chock_a_block', 'sell_side']
 
     def __init__(self):
+        self.ready = None   # Is the instance ready ?
         self._shelve_path = os.path.join(BASE_PATH, 'lib/gm.db')
         self.headers = {
             'Cookie' : 'api_key={}'.format(API_KEY)
@@ -40,7 +41,6 @@ class GameMaster(object):
 
         ## setting up level info
         self.target_price_l2 = None
-
 
 
     """
@@ -115,9 +115,11 @@ class GameMaster(object):
             self._start_resp = resp
             self.target_price_l2 = None
             ret_val = True
+            self.ready = True
         else:
             print('Error : {}'.format(resp.get('error')))
             ret_val = False
+            self.ready = False
 
         return ret_val
 
