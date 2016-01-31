@@ -3,6 +3,7 @@ import random
 import time
 
 import arrow
+import numpy as np
 import pandas as pd
 
 from stockfighter import MarketBroker
@@ -19,7 +20,13 @@ class TraderBook(object):
 
     def __init__(self, marketbroker):
         self.mb = marketbroker
-        self.orders = dict()
+        self._db = marketbroker._db
+        self.book = {
+            'position'   : {'qty' : 0, 'pps' : 0},
+            'open_buy'   : {'qty' : 0, 'pps' : 0},
+            'open_sell'   : {'qty' : 0, 'pps' : 0}
+        }
+
         print('TraderBook Ready')
 
 
@@ -37,20 +44,50 @@ class TraderBook(object):
         """
             Stores the response from an order
         """
-        if res:
-            oid = res.pop('id')
-            self.orders[oid] = res
+        res.pop('fills')
+        self._db.save_order(res)
 
     def _update_orders(self):
         """
-            Update status of orders
+            Update status of orders - in database
+                - get fills from websocket
+                - find latest status for all the fills
+                - for each record that exists in db, updates it.
         """
         orders = self.mb._get_fills_ws()
         latest_only = self._find_latest(orders)
 
         for oid, order in latest_only.items():
-            if oid in self.orders:
-                self.orders[oid] = order
+            oid_record = self._db.db['orders'].find_one(id=oid)
+            if oid_record:
+                update_data = order.get('order')
+                if 'fills' in update_data:
+                    update_data.pop('fills')
+                self._db.db['orders'].update(update_data, keys=['id'])
+
+    def flush_old_orders(self, seconds=120):
+        # Cancel all open orders older than seconds
+        all_orders = self.mb.all_orders_in_stock
+        if all_orders:
+            for order in all_orders:
+                if order.get('open'):
+                    if (arrow.get(order.get('ts')) < arrow.utcnow().replace(seconds= -seconds)):
+                        self.cancel(order.get('id'))
+
+    @staticmethod
+    def _pos_and_price(data):
+        """
+            From a dataframe of qty & prices, returns the total qty, and the price per share
+        """
+        df = pd.DataFrame(data=data, columns=['qty', 'price'])
+
+        if not df.empty:
+            position = df.qty.sum()
+            pps = np.average(df.price, weights=df.qty)
+        else:
+            position, pps = 0, 0
+
+        return {'qty': position, 'pps': pps}
 
     def get_own_book(self):
         """
@@ -60,13 +97,47 @@ class TraderBook(object):
                 - sell      : number of shares with open sell orders
         """
         self._update_orders()
-        sold = sum([order.get('totalFilled') for order in self.orders.values() if (not order.get('open') and order.get('direction') == 'sell')])
-        bought = sum([order.get('totalFilled') for order in self.orders.values() if (not order.get('open') and order.get('direction') == 'buy')])
-        position = bought - sold
-        buy_open = sum([order.get('originalQty') - order.get('totalFilled') for order in self.orders.values() if (order.get('open') and order.get('direction') == 'buy')])
-        sell_open = sum([order.get('originalQty') - order.get('totalFilled') for order in self.orders.values() if (order.get('open') and order.get('direction') == 'sell')])
-        return (position, buy_open, sell_open)
 
+        filled_orders = []
+        unfilled_orders = {
+            'buy'    : [],
+            'sell'   : [],
+
+        }
+
+        for o in self._db.iterate_table('orders'):
+            # direction
+            direction = 1 if o.get('direction') == 'buy' else -1
+            # filled / unfilled
+            filled = o.get('totalFilled')
+            unfilled = o.get('originalQty') - filled
+            price = o.get('price')
+            ## Filled orders
+            if filled > 0:
+                filled_orders.append([filled * direction, price])
+
+            if unfilled > 0 and o.get('open'):
+                unfilled_orders[o.get('direction')].append([unfilled, price])
+
+        self.book = {
+            'position'  : self._pos_and_price(filled_orders),
+            'open_buy'   : self._pos_and_price(unfilled_orders['buy']),
+            'open_sell'   : self._pos_and_price(unfilled_orders['sell']),
+        }
+
+        return self.book
+
+    def compute_pnl(self):
+        qty = self.book.get('position').get('qty')
+        pps = self.book.get('position').get('pps')
+        if qty:
+            self._market_value = (self.mb.get_histo().iloc[-1]['last'] / 100) * qty
+            value = qty * pps / 100
+            self.pnl = self._market_value - value
+        else:
+            self.pnl = None
+
+        return self.pnl
 
     def buy(self, qty, price=None, order_type='limit'):
         """
@@ -77,7 +148,8 @@ class TraderBook(object):
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
         res = self.mb._buy(qty, price, order_type)
-        self._store_order_result(res)
+        if res:
+            self._db.save_order(res)
         return res
 
     def sell(self, qty, price=None, order_type='limit'):
@@ -89,7 +161,8 @@ class TraderBook(object):
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
         res = self.mb._sell(qty, price, order_type)
-        self._store_order_result(res)
+        if res:
+            self._db.save_order(res)
         return res
 
     def cancel(self, oid):
@@ -99,7 +172,11 @@ class TraderBook(object):
                 oid :
         """
         res = self.mb._cancel(oid)
-        return res
+        if res.get('ok') and not res.get('open'):
+            print('Order {} cancelled successfully'.format(oid))
+        else:
+            raise Exception('Couldnt cancel order')
+
 
     """
         Fills related
@@ -127,42 +204,3 @@ class TraderBook(object):
                     latest_only[soid] = order
 
         return latest_only
-
-    def calculate_position(self):
-        """
-            Uses our stored orders to compute our position.
-            Returns a tuple
-                pps     - price paid per shares. Net cost of our purchases / sales, divided by
-                        the total qty of shares we are long / short at the moment
-                qty     - qty of shares we own (negative if we are short)
-                nav     - our current PnL : cash + market_value
-                            x cash          = aggregate cost of our purchases / sales
-                            x market_value  = current market value of our position.
-                                Using the price of the latet trade
-        """
-        orders = self.mb._get_fills_ws()
-        latest_only = self._find_latest(orders)
-        qty, value = 0, 0
-
-        # Iterating the fills
-        for oid, order in latest_only.items():
-            direction = order.get('order').get('direction')
-            dir_sign = 1 if direction == 'buy' else -1
-            # aggregating all the partial fills of that order
-            for fill in order.get('order').get('fills'):
-                t_qty = fill.get('qty') * dir_sign
-                t_price = fill.get('price')
-                qty += t_qty
-                value += t_qty * (t_price / 100)
-
-
-        if qty != 0:
-            pps = value / qty
-            # market value of shares
-            self._market_value = (self.mb.get_histo().iloc[-1]['last'] / 100) * qty
-            self._cash = - value
-            ret_val = (pps, qty, self._cash + self._market_value)
-        else:
-            ret_val = (None, 0, 0)
-
-        return ret_val

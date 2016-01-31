@@ -50,6 +50,7 @@ class GameMaster(object):
 
         ## setting up level info
         self.target_price_l2 = None
+        self._live = None
 
 
     """
