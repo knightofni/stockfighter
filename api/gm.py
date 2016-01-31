@@ -1,6 +1,8 @@
 import json
 import shelve
 import os
+import time
+import threading
 from contextlib import closing
 
 import requests
@@ -15,25 +17,32 @@ class GameMaster(object):
     """
         Starts / Restarts sessions
         Keeps game info and feeds it to further objects
+        Starts a thread that will update the game state every 5 seconds (_update method)
+            - thread start after start or restart methods are called
         from : https://discuss.starfighters.io/t/the-gm-api-how-to-start-stop-restart-resume-trading-levels-automagically/143/2
 
         Public Methods :
             - start     : arg : level, string identifying the level. Must be part of _LEVELS class attribute
             - stop      : stop a level
             - restart   : restart a level with same stock / venue
-            - completion : Updates level state. Prints completion (number of days in game). Usefull to get extra data
+            - completion : Prints completion (number of days in game). Usefull to get extra data
 
     """
     _URL = 'https://www.stockfighter.io/gm'
     _LEVELS = ['first_steps', 'chock_a_block', 'sell_side']
 
-    def __init__(self):
+    def __init__(self, db=None):
         self.ready = None   # Is the instance ready ?
         self._shelve_path = os.path.join(BASE_PATH, 'lib/gm.db')
         self.headers = {
             'Cookie' : 'api_key={}'.format(API_KEY)
             }
         self._instanceId = self._load_instance_id()
+
+        if not db:
+            raise Exception('An instance of StockDataBase needs to be passed as argument db')
+        else:
+            self._db = db
 
         if self._instanceId:
             # try to resume
@@ -70,11 +79,21 @@ class GameMaster(object):
     """
         Updating the GameMaster to know advancement / get extra data
     """
+    def _start_update_thread(self):
+        thrd = threading.Thread(target=self._loop)
+        thrd.daemon=True
+        thrd.start()
+
+    def _loop(self):
+        time.sleep(2)
+        while True:
+            self._update()
+            time.sleep(5)
+
     def completion(self):
         """
             Updates GameMaster so that we know what is the current trading day
         """
-        self._update()
         if self._live:
             print('{}/{} trading days'.format(self._tradingDay, self._endOfTheWorldDay))
         else:
@@ -97,10 +116,11 @@ class GameMaster(object):
         url = self._URL + '/instances/{instanceId}'.format(instanceId=self._instanceId)
         resp = self._get(url)
         self._live = resp.get('ok')
-        self._endOfTheWorldDay = resp.get('details').get('endOfTheWorldDay')
-        self._tradingDay = resp.get('details').get('tradingDay')
-        self._status = resp
-        self._flash_level2()
+        if self._live:
+            self._endOfTheWorldDay = resp.get('details', {}).get('endOfTheWorldDay')
+            self._tradingDay = resp.get('details', {}).get('tradingDay')
+            self._status = resp
+            self._flash_level2()
 
 
     """
@@ -132,6 +152,7 @@ class GameMaster(object):
         if self._parse_starting_info(resp):
             self._save_instance_id(self._instanceId)
             print('GameMaster : level {} initiated'.format(level))
+            self._start_update_thread()
 
     def stop(self):
         if self._instanceId is not None:
@@ -147,6 +168,7 @@ class GameMaster(object):
             resp = self._post(url)
             if self._parse_starting_info(resp):
                 print('Restarted')
+                self._start_update_thread()
         else:
             raise Exception('Cant restart because there is no recorded instanceId')
 
