@@ -20,6 +20,7 @@ class StockFighterTrader(object):
         self.order_book = None
         self._update = update
         thrd = threading.Thread(target=self._loop)
+        thrd.daemon=True
         thrd.start()
 
         print('StockFighterTrader initiated')
