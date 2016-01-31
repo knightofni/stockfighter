@@ -22,7 +22,7 @@ class MarketBroker(object):
             - send buy / sell orders            [buy, sell methods]
             - cancel orders                     [cancel methods]
             - show order book from API call     [order_book]
-            - show own open orders              [show_pending_orders]
+            - show orders                       [all_orders_in_stock]
             - show past trades data             [get_histo]
             - show past bid / ask data          [get_spread]
 
@@ -36,12 +36,14 @@ class MarketBroker(object):
             self._venue = gm.venues[0]
             self._stock = gm.tickers[0]
             self._account = gm.account
+            self._db = gm._db
         elif gm and not gm.ready:
             raise Exception('GameMaster Not Ready')
         else:
             self._venue = 'TESTEX'
             self._stock = 'FOOBAR'
             self._account = 'EXB123456'
+
         # Instanciate a StockFighterTrade. Checks health of sf
         self._sft = StockFighterTrader(self._venue, self._stock)
         # Genetic API data
@@ -60,6 +62,7 @@ class MarketBroker(object):
         self.all_orders_in_stock = dict()
         self._update = update
         thrd = threading.Thread(target=self._loop)
+        thrd.daemon=True
         thrd.start()
 
         print('Market Maker for stock {} initiated'.format(self._stock))
@@ -127,36 +130,7 @@ class MarketBroker(object):
             return df.loc[df.index.max()]
         else:
             return pd.Series()
-    """
-        Past orders related. Updates list of open orders
-    """
 
-    # def show_pending_orders(self):
-    #     """
-    #         returns a sorted dataframe of pending orders
-    #     """
-    #     self._parse_live_orders()
-    #     if len(self.openorders) > 0:
-    #         raw = pd.DataFrame(self.openorders).sort_values(by='price', ascending=False)
-    #         df = raw[['ts', 'id','direction', 'price', 'qty', 'totalFilled']]
-    #         df['ts'] = pd.to_datetime(df['ts'])
-    #         return df
-    #     else:
-    #         return pd.DataFrame()
-
-
-    # def _parse_live_orders(self):
-    #     """
-    #         Checks all passed orders for stock.
-    #         Splits the list between closed and pending orders
-    #     """
-    #     orders = self.get_all_orders_in_stock()
-    #     self.openorders, self.closedorders = [], []
-    #     for order in orders:
-    #         if order.get('open'):
-    #             self.openorders.append(order)
-    #         else:
-    #             self.closedorders.append(order)
     """
         Sends buy / sell orders
             - Will parse and store the execution result
@@ -172,7 +146,7 @@ class MarketBroker(object):
 
 
         order = {
-            'account'  : self_account,
+            'account'  : self._account,
             'venue'    : self._venue,
             'stock'    : self._stock,
             'price'    : int(price),
@@ -193,6 +167,7 @@ class MarketBroker(object):
         elif res.get('error'):
             raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
         else:
+            print('Order did not go through, returned : {}'.format(res))
             return None
 
 
@@ -225,7 +200,6 @@ class MarketBroker(object):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{order}"
         url = url.format(venue=self._venue, stock=self._stock, order=oid)
         res = self._delete(url)
-        self.closedorders.append(res)
         return res
 
 
@@ -234,6 +208,7 @@ class MarketBroker(object):
             similar results faster.
     """
     def _loop(self):
+        self.all_orders_in_stock = None
         while True:
             self.all_orders_in_stock = self._get_all_orders_in_stock()
             time.sleep(self._update)
