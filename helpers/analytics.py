@@ -1,4 +1,4 @@
-
+import pandas as pd
 
 def get_avg_price(mm):
     # VWAP as of now
@@ -7,7 +7,7 @@ def get_avg_price(mm):
         df['prod'] = df['last'] * df['lastSize']
         return df['prod'].sum() / df['lastSize'].sum()
     else:
-        return None
+        return pd.DataFrame()
 
 def get_vwap(mm):
     df = mm.get_histo()
@@ -16,5 +16,5 @@ def get_vwap(mm):
         df = df.resample('10S', how='sum')
         return  df['prod'].cumsum() / df['lastSize'].cumsum()
     else:
-        return None
+        return pd.DataFrame()
 

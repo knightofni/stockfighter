@@ -13,7 +13,7 @@ class StockDataBase(object):
             if os.path.isfile(abs_path):
                 os.remove(abs_path)
 
-        print('Connecting to Database')
+        print('Connecting to Database at : {}'.format(abs_path))
         self.db = dataset.connect('sqlite:///{}'.format(abs_path))
 
     def save_orders(self, list_orders):

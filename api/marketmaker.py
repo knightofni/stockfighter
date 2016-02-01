@@ -18,13 +18,16 @@ class MarketBroker(object):
             - Needs an instance of GameMaster to be instanciated
             - MarketMaker expects that the GameMaster instance has already started a level
 
-        Capabilities :
-            - send buy / sell orders            [buy, sell methods]
-            - cancel orders                     [cancel methods]
-            - show order book from API call     [order_book]
-            - show orders                       [all_orders_in_stock]
-            - show past trades data             [get_histo]
-            - show past bid / ask data          [get_spread]
+        Public Methods / Attributes:
+            - order_book                : dict. Current Bid Ask on the stock
+            - all_orders_in_stock       : list of dicts. All the orders of our account in the stock
+            - get_spread()              : method, returning DataFame. Historical Bid / Ask
+            - get_latest_quote_time()   : method, returning arrow time.  of the latest quote.
+            - get_quote()               : method, returning DataFame. Timeserie of trades
+
+        Private Methods :
+            - _buy / _sell / _cancel / _post_send_order     : order management
+            -
 
     """
     _ORDER_TYPE = ('limit', 'market', 'fill-or-kill', 'immediate-or-cancel')
@@ -51,7 +54,7 @@ class MarketBroker(object):
             'X-Starfighter-Authorization' : API_KEY
         }
         order_url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
-        self._order_url = order_url.format(venue=self._venue, stock=self._stock)
+        self.__order_url = order_url.format(venue=self._venue, stock=self._stock)
 
         # Start a websocket listener for quotes
         self._wsq = WebSocketListenerQuotes(self)
@@ -60,8 +63,8 @@ class MarketBroker(object):
 
         # Starts polling loop
         self.all_orders_in_stock = dict()
-        self._update = update
-        thrd = threading.Thread(target=self._loop)
+        self.__update = update
+        thrd = threading.Thread(target=self.__loop)
         thrd.daemon=True
         thrd.start()
 
@@ -71,25 +74,25 @@ class MarketBroker(object):
     """
         Standard API helpers
     """
-    def _get_response(self, url):
+    def __get_response(self, url):
         res = requests.get(url, headers=self._headers)
         return res.json()
 
-    def _post_json(self, url, data):
+    def __post_json(self, url, data):
         res = requests.post(url, data=json.dumps(data), headers=self._headers)
         return res.json()
 
-    def _delete(self, url):
+    def __delete(self, url):
         res = requests.delete(url, headers=self._headers)
         return res.json()
 
-    def _check_websocket_quotes_health(self):
+    def __check_websocket_quotes_health(self):
         if not self._wsq.ws.live:
             data = self._wsq.ws.data.copy()
             self._wsq = WebSocketListenerQuotes(self, data)
             print('WebSocketListenerQuotes restarted')
 
-    def _check_websocket_fills_health(self):
+    def __check_websocket_fills_health(self):
         if not self._wsf.ws.live:
             data = self._wsf.ws.data.copy()
             self._wsf = WebSocketListenerFills(self, data)
@@ -99,12 +102,12 @@ class MarketBroker(object):
         Market Data
     """
     def get_histo(self):
-        self._check_websocket_quotes_health()
+        self.__check_websocket_quotes_health()
         return self._wsq.get_data()
 
-    def get_spread(self):
-        self._check_websocket_quotes_health()
-        return self._wsq.get_spread()
+    def get_spread(self, rows='all'):
+        self.__check_websocket_quotes_health()
+        return self._wsq.get_spread(rows=rows)
 
     @property
     def order_book(self):
@@ -115,21 +118,17 @@ class MarketBroker(object):
 
     def _get_fills_ws(self):
         # Data from the Fills websocket
-        self._check_websocket_fills_health()
+        self.__check_websocket_fills_health()
         return self._wsf.ws.data
 
     def get_latest_quote_time(self):
         # arrow time of the latest quote
-        self._check_websocket_quotes_health()
+        self.__check_websocket_quotes_health()
         return self._wsq.get_latest_quote_time()
 
     def current_quote(self):
         # Get data on the latest quote
-        df = self.get_spread()
-        if not df.empty:
-            return df.loc[df.index.max()]
-        else:
-            return pd.Series()
+        return self._wsq.get_quote()
 
     """
         Sends buy / sell orders
@@ -137,7 +136,7 @@ class MarketBroker(object):
             - can also cancel orders
     """
 
-    def _post_send_order(self, qty, price, order_type, direction):
+    def __post_send_order(self, qty, price, order_type, direction):
         if order_type not in self._ORDER_TYPE:
             raise Exception('order_type must be on of : [{}]'.format(', '.join(self._ORDER_TYPE)))
 
@@ -156,7 +155,7 @@ class MarketBroker(object):
         }
 
         if qty > 0:
-            res = self._post_json(self._order_url, order)
+            res = self.__post_json(self.__order_url, order)
         else:
             print('Qty passed {} - not sending {} order'.format(qty, direction))
             res = dict()
@@ -167,7 +166,6 @@ class MarketBroker(object):
         elif res.get('error'):
             raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
         else:
-            print('Order did not go through, returned : {}'.format(res))
             return None
 
 
@@ -179,7 +177,7 @@ class MarketBroker(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        return self._post_send_order(qty, price, order_type, 'buy')
+        return self.__post_send_order(qty, price, order_type, 'buy')
 
     def _sell(self, qty, price=None, order_type='limit'):
         """
@@ -189,7 +187,7 @@ class MarketBroker(object):
                 price   : int, price x 100
                 order_type : string, limit, market, fill-or-kill, immediate-or-cancel
         """
-        return self._post_send_order(qty, price, order_type, 'sell')
+        return self.__post_send_order(qty, price, order_type, 'sell')
 
 
     def _cancel(self, oid):
@@ -199,7 +197,7 @@ class MarketBroker(object):
         """
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{order}"
         url = url.format(venue=self._venue, stock=self._stock, order=oid)
-        res = self._delete(url)
+        res = self.__delete(url)
         return res
 
 
@@ -207,15 +205,15 @@ class MarketBroker(object):
         API calls to get order status. Currently not used as the websocket seems to be providing
             similar results faster.
     """
-    def _loop(self):
+    def __loop(self):
         self.all_orders_in_stock = None
         while True:
             self.all_orders_in_stock = self._get_all_orders_in_stock()
-            time.sleep(self._update)
+            time.sleep(self.__update)
 
-    def get_order_status(self, oid):
+    def _get_order_status(self, oid):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}".format(venue=self._venue, stock=self._stock, oid=oid)
-        res = self._get_response(url)
+        res = self.__get_response(url)
         if res.get('ok'):
             return res
         else:
@@ -223,7 +221,7 @@ class MarketBroker(object):
 
     def _get_all_orders_in_stock(self):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self._venue, stock=self._stock, account=self._account)
-        res = self._get_response(url)
+        res = self.__get_response(url)
         if res.get('ok'):
             return res.get('orders')
         else:
@@ -231,7 +229,7 @@ class MarketBroker(object):
 
     def _get_all_orders(self):
         url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self._venue, account=self._account)
-        res = self._get_response(url)
+        res = self.__get_response(url)
         if res.get('ok'):
             return res.get('orders')
         else:

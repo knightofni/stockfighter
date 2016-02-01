@@ -53,6 +53,13 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         else:
             return arrow.utcnow()
 
+    def get_quote(self):
+        if len(self.ws.data) > 1:
+            quote = self.ws.data[-1]
+            if quote.get('ok'):
+                return quote.get('quote')
+            else:
+                return None
     @staticmethod
     def _update_spread_data(histo_data, quote):
         histo_data['quoteTime'].append(arrow.get(quote.get('quoteTime')).datetime)
@@ -62,7 +69,7 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         histo_data['bidSize'].append(quote.get('bidSize'))
         return histo_data
 
-    def get_spread(self):
+    def get_spread(self, rows='all'):
         histo_data = {
             'quoteTime' : [],
             'ask'  : [],
@@ -71,13 +78,16 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
             'bidSize' : [],
         }
 
-        for item in self.ws.data:
+        for item in reversed(self.ws.data):
             if item.get('ok'):
                 histo_data = self._update_spread_data(histo_data, item.get('quote'))
+            if rows != 'all' and len(histo_data.get('quoteTime')) > rows:
+                break
 
         df = pd.DataFrame.from_dict(histo_data).set_index('quoteTime').drop_duplicates()
         df['spread'] = df['ask'] - df['bid']
-        return df.dropna(subset=['spread'])
+        df.sort_index()
+        return df#.dropna(subset=['spread'])
 
     @staticmethod
     def _update_histo_data(histo_data, quote):
