@@ -64,11 +64,10 @@ class MarketBroker(object):
         self.all_orders_in_stock = dict()
         self.__update = update
         thrd = threading.Thread(target=self.__loop)
-        thrd.daemon=True
+        thrd.daemon = True
         thrd.start()
 
         print('Market Maker for stock {} initiated'.format(self._stock))
-
 
     """
         Standard API helpers
@@ -142,15 +141,14 @@ class MarketBroker(object):
         if order_type != 'market' and not price:
             raise Exception('need a price for order_type {}'.format(order_type))
 
-
         order = {
-            'account'  : self._account,
-            'venue'    : self._venue,
-            'stock'    : self._stock,
-            'price'    : int(price),
-            'qty'      : int(qty),
-            'direction' : direction,
-            'orderType' : order_type,
+            'account':   self._account,
+            'venue':     self._venue,
+            'stock':     self._stock,
+            'price':     int(price),
+            'qty':       int(qty),
+            'direction': direction,
+            'orderType': order_type,
         }
 
         if qty > 0:
@@ -159,14 +157,12 @@ class MarketBroker(object):
             print('Qty passed {} - not sending {} order'.format(qty, direction))
             res = dict()
 
-
         if res.get('ok'):
             return res
         elif res.get('error'):
             raise Exception('Order did not go through. API returned {}'.format(res.get('error')))
         else:
             return None
-
 
     def _buy(self, qty, price=None, order_type='limit'):
         """
@@ -188,7 +184,6 @@ class MarketBroker(object):
         """
         return self.__post_send_order(qty, price, order_type, 'sell')
 
-
     def _cancel(self, oid):
         """
             Cancels order of id `oid`.
@@ -198,7 +193,6 @@ class MarketBroker(object):
         url = url.format(venue=self._venue, stock=self._stock, order=oid)
         res = self.__delete(url)
         return res
-
 
     """
         API calls to get order status. Currently not used as the websocket seems to be providing
@@ -211,24 +205,24 @@ class MarketBroker(object):
             time.sleep(self.__update)
 
     def _get_order_status(self, oid):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}".format(venue=self._venue, stock=self._stock, oid=oid)
-        res = self.__get_response(url)
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders/{oid}"
+        res = self.__get_response(url.format(venue=self._venue, stock=self._stock, oid=oid))
         if res.get('ok'):
             return res
         else:
             raise Exception('Didnt get proper data from get_order_status')
 
     def _get_all_orders_in_stock(self):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders".format(venue=self._venue, stock=self._stock, account=self._account)
-        res = self.__get_response(url)
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/stocks/{stock}/orders"
+        res = self.__get_response(url.format(venue=self._venue, stock=self._stock, account=self._account))
         if res.get('ok'):
             return res.get('orders')
         else:
             raise Exception('Didnt get proper data from get_all_orders_in_stock')
 
     def _get_all_orders(self):
-        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders".format(venue=self._venue, account=self._account)
-        res = self.__get_response(url)
+        url = "https://api.stockfighter.io/ob/api/venues/{venue}/accounts/{account}/orders"
+        res = self.__get_response(url.format(venue=self._venue, account=self._account))
         if res.get('ok'):
             return res.get('orders')
         else:
