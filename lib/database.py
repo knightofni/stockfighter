@@ -17,17 +17,17 @@ class StockDataBase(object):
         self.db = dataset.connect('sqlite:///{}'.format(abs_path))
 
     def save_orders(self, list_orders):
-        with self.db as tx:
+        with self.db as tsx:
             for order in list_orders.values():
-                o = order.get('order')
-                if 'fills' in o.keys():
-                    o.pop('fills')
-                tx['orders'].insert(o)
+                order_copy = order.get('order')
+                if 'fills' in order_copy.keys():
+                    order_copy.pop('fills')
+                tsx['orders'].insert(order_copy)
 
     def save_order(self, order):
-        o = order.copy()
-        o.pop('fills')
-        self.db['orders'].insert(o)
+        order_copy = order.copy()
+        order_copy.pop('fills')
+        self.db['orders'].insert(order_copy)
 
     def iterate_table(self, table):
         for item in self.db[table]:

@@ -2,6 +2,7 @@ import arrow
 import numpy as np
 import pandas as pd
 
+
 class TraderBook(object):
     """
         Keeps Track of the book
@@ -15,20 +16,18 @@ class TraderBook(object):
         self.mb = marketbroker
         self._db = marketbroker._db
         self.book = {
-            'position'   : {'qty' : 0, 'pps' : 0},
-            'open_buy'   : {'qty' : 0, 'pps' : 0},
-            'open_sell'   : {'qty' : 0, 'pps' : 0}
+            'position': {'qty': 0, 'pps': 0},
+            'open_buy': {'qty': 0, 'pps': 0},
+            'open_sell': {'qty': 0, 'pps': 0}
         }
 
         print('TraderBook Ready')
-
 
     def seconds_without_trading(self):
         # How many seconds since the last trade
         last_trade = arrow.get(self.mb.current_quote().name)
         last_quote = self.mb.get_latest_quote_time()
         return (last_quote - last_trade).total_seconds()
-
 
     """
         Orders related
@@ -64,7 +63,7 @@ class TraderBook(object):
         if all_orders:
             for order in all_orders:
                 if order.get('open'):
-                    if (arrow.get(order.get('ts')) < arrow.utcnow().replace(seconds= -seconds)):
+                    if arrow.get(order.get('ts')) < arrow.utcnow().replace(seconds=-seconds):
                         self.cancel(order.get('id'))
 
     @staticmethod
@@ -93,29 +92,29 @@ class TraderBook(object):
 
         filled_orders = []
         unfilled_orders = {
-            'buy'    : [],
-            'sell'   : [],
+            'buy':   [],
+            'sell':  [],
 
         }
 
-        for o in self._db.iterate_table('orders'):
+        for order in self._db.iterate_table('orders'):
             # direction
-            direction = 1 if o.get('direction') == 'buy' else -1
+            direction = 1 if order.get('direction') == 'buy' else -1
             # filled / unfilled
-            filled = o.get('totalFilled')
-            unfilled = o.get('originalQty') - filled
-            price = o.get('price')
+            filled = order.get('totalFilled')
+            unfilled = order.get('originalQty') - filled
+            price = order.get('price')
             ## Filled orders
             if filled > 0:
                 filled_orders.append([filled * direction, price])
 
-            if unfilled > 0 and o.get('open'):
-                unfilled_orders[o.get('direction')].append([unfilled, price])
+            if unfilled > 0 and order.get('open'):
+                unfilled_orders[order.get('direction')].append([unfilled, price])
 
         self.book = {
-            'position'  : self._pos_and_price(filled_orders),
-            'open_buy'   : self._pos_and_price(unfilled_orders['buy']),
-            'open_sell'   : self._pos_and_price(unfilled_orders['sell']),
+            'position':     self._pos_and_price(filled_orders),
+            'open_buy':     self._pos_and_price(unfilled_orders['buy']),
+            'open_sell':    self._pos_and_price(unfilled_orders['sell']),
         }
 
         return self.book
@@ -170,11 +169,11 @@ class TraderBook(object):
         else:
             raise Exception('Couldnt cancel order')
 
-
     """
         Fills related
     """
-    def _find_latest(self, orders):
+    @staticmethod
+    def _find_latest(orders):
         """
             From a dictionnary of fills (returned by the fills websocket)
                 filters, and return only the latest information

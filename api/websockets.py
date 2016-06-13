@@ -47,10 +47,9 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         if data is None:
             data = []
 
-        url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
+        url = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
         url = url.format(account=mm._account, venue=mm._venue, stock=mm._stock)
         ThreadedWebSocket.__init__(self, url, data)
-
 
     def get_latest_quote_time(self):
         if len(self.webs.data) > 0:
@@ -65,6 +64,7 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
                 return quote.get('quote')
             else:
                 return None
+
     @staticmethod
     def _update_spread_data(histo_data, quote):
         histo_data['quoteTime'].append(arrow.get(quote.get('quoteTime')).datetime)
