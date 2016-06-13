@@ -41,7 +41,10 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
                                     removes dates where we have only bids or asks
             - get_data              : dataframe (timeserie) of trades.
     """
-    def __init__(self, mm, data=[]):
+    def __init__(self, mm, data=None):
+        if data is None:
+            data = []
+
         url ='wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/tickertape/stocks/{stock}'
         url = url.format(account=mm._account, venue=mm._venue, stock=mm._stock)
         ThreadedWebSocket.__init__(self, url, data)
@@ -81,7 +84,7 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
         for item in reversed(self.ws.data):
             if item.get('ok'):
                 histo_data = self._update_spread_data(histo_data, item.get('quote'))
-            if rows != 'all' and len(histo_data.get('quoteTime')) > rows:
+            if rows != 'all' and len(histo_data.get('quoteTime')) >  rows:
                 break
 
         df = pd.DataFrame.from_dict(histo_data).set_index('quoteTime').drop_duplicates()
@@ -115,7 +118,10 @@ class WebSocketListenerFills(ThreadedWebSocket):
         - Creates a websocket listener
         - Runs it into a thread
     """
-    def __init__(self, mm, data=[]):
+    def __init__(self, mm, data=None):
+        if data is None:
+            data = []
+
         url = 'wss://api.stockfighter.io/ob/api/ws/{account}/venues/{venue}/executions/stocks/{stock}'
         url = url.format(account=mm._account, venue=mm._venue, stock=mm._stock)
         ThreadedWebSocket.__init__(self, url, data)

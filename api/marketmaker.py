@@ -2,7 +2,6 @@ import json
 import time
 import threading
 
-import arrow
 import requests
 import pandas as pd
 

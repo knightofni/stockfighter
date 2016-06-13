@@ -1,4 +1,3 @@
-import json
 import shelve
 import os
 import time
@@ -158,7 +157,7 @@ class GameMaster(object):
     def stop(self):
         if self._instanceId is not None:
             url = self._URL + '/instances/{instanceId}/stop'.format(instanceId=self._instanceId)
-            resp = self._post(url)
+            self._post(url)
             print('Stopped')
         else:
             raise Exception('Cant stop because there is no recorded instanceId')
