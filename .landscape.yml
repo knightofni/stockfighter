@@ -1,0 +1,15 @@
+doc-warnings: no
+test-warnings: no
+strictness: high
+max-line-length: 120
+autodetect: yes
+requirements:
+    - deps/core.txt
+    - deps/test.txt
+ignore-paths:
+    - docs
+ignore-patterns:
+    - ^example/doc_.*\.py$
+    - (^|/)docs(/|$)
+python-targets:
+    - 3

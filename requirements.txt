@@ -1,0 +1,5 @@
+pandas==0.17.1
+requests==2.9
+arrow
+websocket-client
+pandas

@@ -3,7 +3,6 @@ import time
 import threading
 
 import requests
-import pandas as pd
 
 from stockfighter import config
 from .venue import StockFighterTrader
