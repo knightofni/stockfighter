@@ -1,13 +1,6 @@
-import json
-import random
-import time
-
 import arrow
 import numpy as np
 import pandas as pd
-
-from stockfighter import MarketBroker
-
 
 class TraderBook(object):
     """

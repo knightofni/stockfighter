@@ -18,7 +18,7 @@ class StockDataBase(object):
 
     def save_orders(self, list_orders):
         with self.db as tx:
-            for oid, order in list_orders.items():
+            for order in list_orders.values():
                 o = order.get('order')
                 if 'fills' in o.keys():
                     o.pop('fills')
