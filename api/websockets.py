@@ -1,7 +1,8 @@
-import websocket
-import arrow
 import json
 import threading
+
+import websocket
+import arrow
 import pandas as pd
 
 
@@ -16,22 +17,23 @@ class ThreadedWebSocket(object):
         self._create_thread(url, data)
 
     def _create_thread(self, url, data):
-        ws = websocket.WebSocketApp(url, on_message = self.on_message, on_close = self.on_close)
-        ws.data = []
-        wst = threading.Thread(target=ws.run_forever)
+        webs = websocket.WebSocketApp(url, on_message = self.on_message, on_close = self.on_close)
+        webs.data = []
+        wst = threading.Thread(target=webs.run_forever)
         wst.daemon = True
         wst.start()
-        self.ws = ws
-        self.ws.live = True
+        self.webs = webs
+        self.webs.live = True
 
     @staticmethod
-    def on_message(ws, message):
-        ws.data.append(json.loads(message))
+    def on_message(webs, message):
+        webs.data.append(json.loads(message))
 
     @staticmethod
-    def on_close(ws):
-        ws.live = False
+    def on_close(webs):
+        webs.live = False
         print("### closed ###")
+
 
 class WebSocketListenerQuotes(ThreadedWebSocket):
     """
@@ -51,14 +53,14 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
 
 
     def get_latest_quote_time(self):
-        if len(self.ws.data) > 0:
-            return arrow.get(self.ws.data[-1].get('quote').get('quoteTime'))
+        if len(self.webs.data) > 0:
+            return arrow.get(self.webs.data[-1].get('quote').get('quoteTime'))
         else:
             return arrow.utcnow()
 
     def get_quote(self):
-        if len(self.ws.data) > 1:
-            quote = self.ws.data[-1]
+        if len(self.webs.data) > 1:
+            quote = self.webs.data[-1]
             if quote.get('ok'):
                 return quote.get('quote')
             else:
@@ -81,7 +83,7 @@ class WebSocketListenerQuotes(ThreadedWebSocket):
             'bidSize' : [],
         }
 
-        for item in reversed(self.ws.data):
+        for item in reversed(self.webs.data):
             if item.get('ok'):
                 histo_data = self._update_spread_data(histo_data, item.get('quote'))
             if rows != 'all' and len(histo_data.get('quoteTime')) >  rows:
