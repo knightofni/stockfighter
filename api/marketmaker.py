@@ -10,6 +10,7 @@ from .websockets import WebSocketListenerQuotes, WebSocketListenerFills
 
 API_KEY = config.get('api', 'APIKEY')
 
+
 class MarketBroker(object):
     """
         Main API.
@@ -49,8 +50,8 @@ class MarketBroker(object):
         self._sft = StockFighterTrader(self._venue, self._stock)
         # Genetic API data
         self._headers = {
-            'X-Starfighter-Authorization' : API_KEY
-        }
+            'X-Starfighter-Authorization': API_KEY
+                        }
         order_url = "https://api.stockfighter.io/ob/api/venues/{venue}/stocks/{stock}/orders"
         self.__order_url = order_url.format(venue=self._venue, stock=self._stock)
 

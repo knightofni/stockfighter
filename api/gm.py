@@ -35,7 +35,7 @@ class GameMaster(object):
         self._shelve_path = os.path.join(BASE_PATH, 'lib/gm.db')
         self.headers = {
             'Cookie' : 'api_key={}'.format(API_KEY)
-            }
+                       }
         self._instanceId = self._load_instance_id()
 
         if not db:
@@ -51,37 +51,36 @@ class GameMaster(object):
         self.target_price_l2 = None
         self._live = None
 
-
     """
         API helpers
     """
     def _post(self, url):
-        r = requests.post(url, headers=self.headers)
-        return r.json()
+        resp = requests.post(url, headers=self.headers)
+        return resp.json()
 
     def _get(self, url):
-        r = requests.get(url, headers=self.headers)
-        return r.json()
+        resp = requests.get(url, headers=self.headers)
+        return resp.json()
 
     """
         Saving and Loading the instanceId to disk for easier resume
     """
-    def _save_instance_id(self, instanceId):
+    def _save_instance_id(self, instanceid):
         with closing(shelve.open(self._shelve_path)) as db:
-            db['instanceId'] = instanceId
+            db['instanceId'] = instanceid
 
     def _load_instance_id(self):
         with closing(shelve.open(self._shelve_path)) as db:
-            instanceId = db.get('instanceId')
+            instanceid = db.get('instanceId')
 
-        return instanceId
+        return instanceid
 
     """
         Updating the GameMaster to know advancement / get extra data
     """
     def _start_update_thread(self):
         thrd = threading.Thread(target=self._loop)
-        thrd.daemon=True
+        thrd.daemon = True
         thrd.start()
 
     def _loop(self):
@@ -105,12 +104,11 @@ class GameMaster(object):
         """
         flash = self._status.get('flash', {}).get('info')
         if flash:
-            i1 = flash.index('$')
-            i2 = flash[i1+1:].index('$')
-            self.target_price_l2 = float(flash[i1+i2+2:-1])
+            idx1 = flash.index('$')
+            idx2 = flash[idx1 + 1:].index('$')
+            self.target_price_l2 = float(flash[idx1 + idx2 + 2 : - 1])
         else:
             self.target_price_l2 = None
-
 
     def _update(self):
         url = self._URL + '/instances/{instanceId}'.format(instanceId=self._instanceId)
@@ -121,7 +119,6 @@ class GameMaster(object):
             self._tradingDay = resp.get('details', {}).get('tradingDay')
             self._status = resp
             self._flash_level2()
-
 
     """
         Controls the GameMaster
